@@ -53,10 +53,19 @@ class ImageFinder
 
                 // Image collection array
                 $images = array();
-                
+                $patternInvalid = array('gravatar', 'feedburner', 'icon', 'logo', 'spinner', 'loading', 'badge', 'pixel', 'ads', 'doubleclick');
+                $lastSurface = 0;
                 // For all found img tags
                 foreach($this->document->getElementsByTagName('img') as $img)
                 {
+                    //if image not match pattern, then do
+                    foreach ($patternInvalid as $pattern) {
+                        if (strpos($img->getAttribute('src'), $pattern) !== FALSE) {
+                            //pattern invalid exists on string
+                            continue 2; //skip to next image, not next pattern
+                        }
+                    }
+
                         // Extract what we want
                         $image = array
                         (
@@ -67,14 +76,79 @@ class ImageFinder
                         if( ! $image['src'])
                                 continue;
 
-                        // Add to collection. Use src as key to prevent duplicates.
-                        $images[$image['src']] = $image;
-                }
+                        //image must be greater than 64x64 (px)
+                        $minimumSurface = 96 * 96;
+                        //para mejorar la performance, se podría bajar con curl la imagen y luego analizarla.
+                        //http://stackoverflow.com/questions/4635936/super-fast-getimagesize-in-php
+                        $headers = array("Range: bytes=0-32768");
+                        $request = curl_init($image['src']);
+                        curl_setopt_array($request, array
+                        (
+                            CURLOPT_HTTPHEADER => $headers,
+                            CURLOPT_URL => $image['src'],
+                            
+                            CURLOPT_RETURNTRANSFER => TRUE,
+                            CURLOPT_HEADER => FALSE,
+                            
+                            CURLOPT_SSL_VERIFYPEER => TRUE,
+                            CURLOPT_CAINFO => 'cacert.pem',
 
+                            CURLOPT_FOLLOWLOCATION => TRUE,
+                            CURLOPT_MAXREDIRS => 10,
+                        ));
+                        $response = curl_exec($request);
+                        curl_close($request);
+                        $im = imagecreatefromstring($response);
+                        if ($im){
+                            $width = imagesx($im);
+                            $height = imagesy($im);
+                            $imageSurface = $width * $height;
+                        }
+                        else{
+                            continue;
+                        }
+                        
+                        //echo $width ."*". $height ." = ". ($width * $height);
+                        //if ($imageSurface > $minimumSurface)
+                            // Add to collection. Use src as key to prevent duplicates.
+                            //$images[$image['src']] = $image;
+
+                        if ($imageSurface > $lastSurface){
+                            $mainImage = $image;
+                            $lastSurface = $imageSurface;
+                        }
+                }
+                //echo var_dump($mainImage);
                 // Return values
+                $images[$image['src']] = $mainImage;
                 return array_values($images);
         }
 
+        public function ranger($url)
+        {
+            $headers = array(
+            "Range: bytes=0-32768"
+            );
+
+            $request = curl_init();
+            curl_setopt_array($request, array
+            (
+                CURLOPT_URL => $url,
+                
+                CURLOPT_RETURNTRANSFER => TRUE,
+                CURLOPT_HEADER => FALSE,
+                
+                CURLOPT_SSL_VERIFYPEER => TRUE,
+                CURLOPT_CAINFO => 'cacert.pem',
+
+                CURLOPT_FOLLOWLOCATION => TRUE,
+                CURLOPT_MAXREDIRS => 10,
+            ));
+            $response = curl_exec($request);
+            curl_close($request);
+
+            return $response;
+        }
 
         /**
          * Gets the html of a url and loads it up in a DOMDocument.
